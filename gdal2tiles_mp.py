@@ -2577,7 +2577,7 @@ def main(argv=None):
             print("\tGenerating for zoom level: " + str(tz))
             pool = Pool()
             for cpu in range(gdal2tiles.options.processes):
-                pool.apply_async(worker_overview_tiles, [argv, cpu, tz])
+                pool.apply(worker_overview_tiles, [argv, cpu, tz])
             pool.close()
             #while len(active_children()) != 0:
             #   try:
