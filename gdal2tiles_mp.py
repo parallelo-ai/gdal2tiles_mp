@@ -40,7 +40,7 @@
 import math
 import os
 import sys
-from multiprocessing import cpu_count, Pool, Process, Queue
+from multiprocessing import cpu_count, Pool, Process, Queue, Value, Array
 
 from osgeo import gdal
 from osgeo import osr
@@ -1246,6 +1246,13 @@ class GDAL2Tiles(object):
 
         # Set the bounds
         tminx, tminy, tmaxx, tmaxy = self.tminmax[self.tmaxz]
+        
+        # print("Interest cpu",cpu)
+        # print("Interest self.tmaxz",self.tmaxz)
+        # print("Interest tminx",tminx)
+        # print("Interest tminy",tminy)
+        # print("Interest tmaxx",tmaxx)
+        # print("Interest tmaxy",tmaxy)
 
         ds = self.out_ds
         tilebands = self.dataBandsCount + 1
@@ -1255,6 +1262,7 @@ class GDAL2Tiles(object):
             print("dataBandsCount: ", self.dataBandsCount)
             print("tilebands: ", tilebands)
 
+        # The amount of tiles that fit between tmax,tmin
         tcount = (1+abs(tmaxx-tminx)) * (1+abs(tmaxy-tminy))
         ti = 0
 
@@ -1278,7 +1286,7 @@ class GDAL2Tiles(object):
                         print("Tile generation skipped because of --resume")
                     else:
                         # TODO Does the progressbar work?
-                        self.progressbar(ti / float(tcount))
+                        self.progressbar((ti / float(tcount)))
                         pass
                     continue
 
@@ -1398,7 +1406,32 @@ class GDAL2Tiles(object):
                         f.close()
 
                 if not self.options.verbose and not self.options.quiet:
-                    self.progressbar(ti / float(tcount))
+                    # # pass
+                    # Adding the number of processes to the progressbar counting
+                    # # print("Interest cpu pb", cpu, (ti /float(tcount))/self.options.processes)
+                    # print("Interest cpu pb", cpu, (ti /float(tcount)))
+                    # self.progressbar((ti / float(tcount))/self.options.processes)
+                    # if cpu == 0:
+                        # self.progressbar((ti / float(tcount)))
+
+                    # This is a multiprocessing shared Array
+                    progress[cpu] = (ti / float(tcount))
+                    
+                    # From multiprocessing Array to regular list
+                    pr = list()
+                    for i in progress:
+                        pr.append(i)
+
+                    # The average of the progress of the processes
+                    progress_avg = sum(pr)/self.options.processes
+
+                    progress_max = max(pr)
+
+                    if cpu == 0:
+                        self.progressbar(progress_avg)
+                        if progress_max == 1.0:
+                            self.progressbar(1.0)
+
 
     def generate_overview_tiles(self, cpu, tz):
         """Generation of the overview tiles (higher in the pyramid) based on existing tiles"""
@@ -2511,6 +2544,17 @@ def worker_metadata(argv):
     print("\tEnd of metadata worker.")
 
 
+# def worker_base_tiles(argv, cpu):
+    # sys.stdout.flush()
+    # print("\tStart of base tile worker: " + str(cpu))
+    # gdal2tiles = GDAL2Tiles(argv[1:])
+    # gdal2tiles.open_input()
+    # gdal2tiles.generate_base_tiles(cpu)
+    # return cpu
+
+# def worker_callback(cpu):
+    # print("End of worker: " + str(cpu))
+
 def worker_base_tiles(argv, cpu):
     sys.stdout.flush()
     print("\tStart of base tile worker: " + str(cpu))
@@ -2519,10 +2563,14 @@ def worker_base_tiles(argv, cpu):
     gdal2tiles.generate_base_tiles(cpu)
     return cpu
 
-
 def worker_callback(cpu):
+    # workers_done += 1
+    # print("End of worker: " + str(cpu), "workers done", int(workers_done))
     print("End of worker: " + str(cpu))
 
+def error_callback(*args):
+    print(args)
+    print("something went f*cking wrong with multiprocessing :\\")
 
 def worker_overview_tiles(argv, cpu, tz):
     sys.stdout.flush()
@@ -2550,24 +2598,21 @@ def main(argv=None):
         p.join()
         print("Metadata generation complete.")
 
+       
+
         pool = Pool()
         #processed_tiles = 0
         print("Generating Base Tiles:")
+
         for cpu in range(gdal2tiles.options.processes):
             pool.apply_async(worker_base_tiles,
                              [argv, cpu],
-                             callback=worker_callback)
+                             callback=worker_callback,
+                             error_callback=error_callback)
         pool.close()
-        # This progress code does not work. The queue deadlocks the pool.join() call.
-        #while len(active_children()) != 0:
-        #   try:
-        #       total = queue.get(timeout=1)
-        #       processed_tiles += 1
-        #       gdal.TermProgress_nocb(processed_tiles / float(total))
-        #       stdout.flush()
-        #   except:
-        #       pass
         pool.join()
+        print("100 - done.")
+        
         print("Base tile generation complete.")
 
         #processed_tiles = 0
@@ -2577,21 +2622,22 @@ def main(argv=None):
             print("\tGenerating for zoom level: " + str(tz))
             pool = Pool()
             for cpu in range(gdal2tiles.options.processes):
+                # This worker can't be asynchronous
                 pool.apply(worker_overview_tiles, [argv, cpu, tz])
             pool.close()
-            #while len(active_children()) != 0:
-            #   try:
-            #       total = queue.get(timeout=1)
-            #       processed_tiles += 1
-            #       gdal.TermProgress_nocb(processed_tiles / float(total))
-            #       stdout.flush()
-            #   except:
-            #       pass
             pool.join()
             print("\tZoom level " + str(tz) + " complete.")
         print("Overview tile generation complete")
 
 
 if __name__ == '__main__':
+    # Initial empty state for the progress
+    init_progress = list(map(lambda x: 0,
+        range(cpu_count())))
+    # This will be the global progress shared array
+    # Array is a member of multiprocessing
+    progress = Array('f',init_progress)
+    # workers_done = Value('d',0)
+
     main(None)
 
