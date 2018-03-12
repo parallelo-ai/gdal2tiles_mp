@@ -469,20 +469,20 @@ class Gdal2TilesError(Exception):
 
 class GDAL2Tiles(object):
 
-    def process(self):
-        """The main processing function, runs all the main steps of processing"""
-
-        # Opening and preprocessing of the input file
-        self.open_input()
-
-        # Generation of main metadata files and HTML viewers
-        self.generate_metadata()
-
-        # Generation of the lowest tiles
-        self.generate_base_tiles()
-
-        # Generation of the overview tiles (higher in the pyramid)
-        self.generate_overview_tiles()
+#   def process(self):
+#       """The main processing function, runs all the main steps of processing"""
+#
+#       # Opening and preprocessing of the input file
+#       self.open_input()
+#
+#       # Generation of main metadata files and HTML viewers
+#       self.generate_metadata()
+#
+#       # Generation of the lowest tiles
+#       self.generate_base_tiles()
+#
+#       # Generation of the overview tiles (higher in the pyramid)
+#       self.generate_overview_tiles()
 
     def error(self, msg, details=""):
         """Print an error message and stop the processing"""
@@ -2544,17 +2544,6 @@ def worker_metadata(argv):
     print("\tEnd of metadata worker.")
 
 
-# def worker_base_tiles(argv, cpu):
-    # sys.stdout.flush()
-    # print("\tStart of base tile worker: " + str(cpu))
-    # gdal2tiles = GDAL2Tiles(argv[1:])
-    # gdal2tiles.open_input()
-    # gdal2tiles.generate_base_tiles(cpu)
-    # return cpu
-
-# def worker_callback(cpu):
-    # print("End of worker: " + str(cpu))
-
 def worker_base_tiles(argv, cpu):
     sys.stdout.flush()
     print("\tStart of base tile worker: " + str(cpu))
@@ -2562,6 +2551,14 @@ def worker_base_tiles(argv, cpu):
     gdal2tiles.open_input()
     gdal2tiles.generate_base_tiles(cpu)
     return cpu
+
+def worker_overview_tiles(argv, cpu, tz):
+    sys.stdout.flush()
+    print("\tStart of overview tile worker: " + str(cpu) + ", zoom=" + str(tz))
+    gdal2tiles = GDAL2Tiles(argv[1:])
+    gdal2tiles.open_input()
+    gdal2tiles.generate_overview_tiles(cpu, tz)
+    print("\tEnd of overview tile worker: " + str(cpu) + ", zoom=" + str(tz))
 
 def worker_callback(cpu):
     # workers_done += 1
@@ -2572,22 +2569,12 @@ def error_callback(*args):
     print(args)
     print("something went f*cking wrong with multiprocessing :\\")
 
-def worker_overview_tiles(argv, cpu, tz):
-    sys.stdout.flush()
-    print("\tStart of overview tile worker: " + str(cpu) + ", zoom=" + str(tz))
-    gdal2tiles = GDAL2Tiles(argv[1:])
-    gdal2tiles.open_input()
-    gdal2tiles.generate_overview_tiles(cpu, tz)
-    print("\tEnd of overview tile worker: " + str(cpu) + ", zoom=" + str(tz))
-
-
 def getZooms(gdal2tiles):
     gdal2tiles.open_input()
     return gdal2tiles.tminz, gdal2tiles.tmaxz
 
 
 def main(argv=None):
-    # argv = gdal.GeneralCmdLineProcessor(sys_argv)
     argv = gdal.GeneralCmdLineProcessor(sys.argv)
     if argv:
         gdal2tiles = GDAL2Tiles(argv[1:])  # handle command line options
@@ -2611,6 +2598,7 @@ def main(argv=None):
                              error_callback=error_callback)
         pool.close()
         pool.join()
+        # Workaround for the 100% filling of the progress bar
         print("100 - done.")
         
         print("Base tile generation complete.")
