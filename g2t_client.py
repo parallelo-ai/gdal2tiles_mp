@@ -13,7 +13,8 @@ class GDAL2TilesSpawner():
        return "GDAL2TilesSpawner(image=" + self.image + ")"
 
     def signal_handler(self, signum, frame):
-        print("got a signal mate",self, signum, frame)
+        # print("got a signal mate",self, signum, frame)
+        # Kills child process
         self.kill_process()
 
     def __init__(self, image, profile="mercator", zoom="14-22", alpha=(0,0,0),
@@ -49,7 +50,8 @@ class GDAL2TilesSpawner():
         # Config log file
         self.init_log()
         self.mk_log_decoration()
-       
+      
+        # Signals that i'll listen to
         signal.signal(signal.SIGINT,  self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
         
@@ -79,8 +81,9 @@ class GDAL2TilesSpawner():
         """
         __call__ executes the class instance as a callable object
         """
-        self.mk_args()
-        self.process = subprocess.Popen(self.arglist)
+        self.mk_args() # Prepare arguments
+        self.process = subprocess.Popen(self.arglist) # Spawn process 
+
         spawned_processes[self.process.pid] = {"pid": self.process.pid,
                                                "image": self.image,
                                                "profile" : self.profile,

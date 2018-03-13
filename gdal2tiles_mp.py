@@ -1235,8 +1235,8 @@ class GDAL2Tiles(object):
         Generation of the base tiles (the lowest in the pyramid) directly from the input raster
         """
 
-        if not self.options.quiet:
-            print("Generating Base Tiles:")
+        # if not self.options.quiet and cpu == 0:
+            # print("Generating Base Tiles:")
 
         if self.options.verbose:
             print('')
@@ -1265,14 +1265,20 @@ class GDAL2Tiles(object):
         # The amount of tiles that fit between tmax,tmin
         tcount = (1+abs(tmaxx-tminx)) * (1+abs(tmaxy-tminy))
         ti = 0
-
+        
         tz = self.tmaxz
+
+        # print("cpu", cpu,"tmaxx-tminx", abs(tmaxx-tminx),"tmaxy-tminy",
+                # abs(tmaxy-tminy),"tz", tz)
+
         for ty in range(tmaxy, tminy - 1, -1):
             for tx in range(tminx, tmaxx + 1):
 
                 if self.stopped:
                     break
                 ti += 1
+
+                # Working load distribution between CPUs
                 if (ti - 1) % self.options.processes != cpu:
                     continue
 
@@ -1429,11 +1435,11 @@ class GDAL2Tiles(object):
 
                     if cpu == 0:
                         self.progressbar(progress_avg)
-                        if progress_max == 1.0:
-                            self.progressbar(1.0)
+                    # self.progressbar(progress_avg)
+                        # if progress_max == 1.0:
+                            # self.progressbar(1.0)
 
-
-    def generate_overview_tiles(self, cpu, tz):
+    def generate_overview_tiles(self):
         """Generation of the overview tiles (higher in the pyramid) based on existing tiles"""
 
         if not self.options.quiet:
@@ -1444,94 +1450,93 @@ class GDAL2Tiles(object):
         # Usage of existing tiles: from 4 underlying tiles generate one as overview.
 
         tcount = 0
-        for z in range(self.tmaxz-1, self.tminz-1, -1):
-            tminx, tminy, tmaxx, tmaxy = self.tminmax[z]
-            tcount += (1 + abs(tmaxx - tminx)) * (1 + abs(tmaxy - tminy))
+        for tz in range(self.tmaxz-1, self.tminz-1, -1):
+            tminx, tminy, tmaxx, tmaxy = self.tminmax[tz]
+            tcount += (1+abs(tmaxx-tminx)) * (1+abs(tmaxy-tminy))
 
         ti = 0
 
-        tminx, tminy, tmaxx, tmaxy = self.tminmax[tz]
-        for ty in range(tmaxy, tminy-1, -1):
-            for tx in range(tminx, tmaxx+1):
+        for tz in range(self.tmaxz-1, self.tminz-1, -1):
+            tminx, tminy, tmaxx, tmaxy = self.tminmax[tz]
+            for ty in range(tmaxy, tminy-1, -1):
+                for tx in range(tminx, tmaxx+1):
 
-                if self.stopped:
-                    break
+                    if self.stopped:
+                        break
 
-                ti += 1
-                if (ti - 1) % self.options.processes != cpu:
-                    continue
-                tilefilename = os.path.join(self.output,
-                                            str(tz),
-                                            str(tx),
-                                            "%s.%s" % (ty, self.tileext))
+                    ti += 1
+                    tilefilename = os.path.join(self.output,
+                                                str(tz),
+                                                str(tx),
+                                                "%s.%s" % (ty, self.tileext))
 
-                if self.options.verbose:
-                    print(ti, '/', tcount, tilefilename)
-
-                if self.options.resume and os.path.exists(tilefilename):
                     if self.options.verbose:
-                        print("Tile generation skipped because of --resume")
-                    else:
-                        self.progressbar(ti / float(tcount))
-                    continue
+                        print(ti, '/', tcount, tilefilename)
 
-                # Create directories for the tile
-                if not os.path.exists(os.path.dirname(tilefilename)):
-                    os.makedirs(os.path.dirname(tilefilename))
+                    if self.options.resume and os.path.exists(tilefilename):
+                        if self.options.verbose:
+                            print("Tile generation skipped because of --resume")
+                        else:
+                            self.progressbar(ti / float(tcount))
+                        continue
 
-                dsquery = self.mem_drv.Create('', 2*self.tilesize, 2*self.tilesize, tilebands)
-                # TODO: fill the null value
-                dstile = self.mem_drv.Create('', self.tilesize, self.tilesize, tilebands)
+                    # Create directories for the tile
+                    if not os.path.exists(os.path.dirname(tilefilename)):
+                        os.makedirs(os.path.dirname(tilefilename))
 
-                # TODO: Implement more clever walking on the tiles with cache functionality
-                # probably walk should start with reading of four tiles from top left corner
-                # Hilbert curve
+                    dsquery = self.mem_drv.Create('', 2*self.tilesize, 2*self.tilesize, tilebands)
+                    # TODO: fill the null value
+                    dstile = self.mem_drv.Create('', self.tilesize, self.tilesize, tilebands)
 
-                children = []
-                # Read the tiles and write them to query window
-                for y in range(2*ty, 2*ty+2):
-                    for x in range(2*tx, 2*tx+2):
-                        minx, miny, maxx, maxy = self.tminmax[tz+1]
-                        if x >= minx and x <= maxx and y >= miny and y <= maxy:
-                            dsquerytile = gdal.Open(
-                                os.path.join(self.output, str(tz+1), str(x),
-                                             "%s.%s" % (y, self.tileext)),
-                                gdal.GA_ReadOnly)
-                            if (ty == 0 and y == 1) or (ty != 0 and (y % (2*ty)) != 0):
-                                tileposy = 0
-                            else:
-                                tileposy = self.tilesize
-                            if tx:
-                                tileposx = x % (2*tx) * self.tilesize
-                            elif tx == 0 and x == 1:
-                                tileposx = self.tilesize
-                            else:
-                                tileposx = 0
-                            dsquery.WriteRaster(
-                                tileposx, tileposy, self.tilesize, self.tilesize,
-                                dsquerytile.ReadRaster(0, 0, self.tilesize, self.tilesize),
-                                band_list=list(range(1, tilebands+1)))
-                            children.append([x, y, tz+1])
+                    # TODO: Implement more clever walking on the tiles with cache functionality
+                    # probably walk should start with reading of four tiles from top left corner
+                    # Hilbert curve
 
-                self.scale_query_to_tile(dsquery, dstile, tilefilename)
-                # Write a copy of tile to png/jpg
-                if self.options.resampling != 'antialias':
+                    children = []
+                    # Read the tiles and write them to query window
+                    for y in range(2*ty, 2*ty+2):
+                        for x in range(2*tx, 2*tx+2):
+                            minx, miny, maxx, maxy = self.tminmax[tz+1]
+                            if x >= minx and x <= maxx and y >= miny and y <= maxy:
+                                dsquerytile = gdal.Open(
+                                    os.path.join(self.output, str(tz+1), str(x),
+                                                 "%s.%s" % (y, self.tileext)),
+                                    gdal.GA_ReadOnly)
+                                if (ty == 0 and y == 1) or (ty != 0 and (y % (2*ty)) != 0):
+                                    tileposy = 0
+                                else:
+                                    tileposy = self.tilesize
+                                if tx:
+                                    tileposx = x % (2*tx) * self.tilesize
+                                elif tx == 0 and x == 1:
+                                    tileposx = self.tilesize
+                                else:
+                                    tileposx = 0
+                                dsquery.WriteRaster(
+                                    tileposx, tileposy, self.tilesize, self.tilesize,
+                                    dsquerytile.ReadRaster(0, 0, self.tilesize, self.tilesize),
+                                    band_list=list(range(1, tilebands+1)))
+                                children.append([x, y, tz+1])
+
+                    self.scale_query_to_tile(dsquery, dstile, tilefilename)
                     # Write a copy of tile to png/jpg
-                    self.out_drv.CreateCopy(tilefilename, dstile, strict=0)
+                    if self.options.resampling != 'antialias':
+                        # Write a copy of tile to png/jpg
+                        self.out_drv.CreateCopy(tilefilename, dstile, strict=0)
 
-                if self.options.verbose:
-                    print("\tbuild from zoom", tz+1,
-                          " tiles:", (2*tx, 2*ty), (2*tx+1, 2*ty),
-                          (2*tx, 2*ty+1), (2*tx+1, 2*ty+1))
+                    if self.options.verbose:
+                        print("\tbuild from zoom", tz+1,
+                              " tiles:", (2*tx, 2*ty), (2*tx+1, 2*ty),
+                              (2*tx, 2*ty+1), (2*tx+1, 2*ty+1))
 
-                # Create a KML file for this tile.
-                if self.kml:
-                    f = open(os.path.join(self.output, '%d/%d/%d.kml' % (tz, tx, ty)), 'wb')
-                    f.write(self.generate_kml(tx, ty, tz, children).encode('utf-8'))
-                    f.close()
+                    # Create a KML file for this tile.
+                    if self.kml:
+                        f = open(os.path.join(self.output, '%d/%d/%d.kml' % (tz, tx, ty)), 'wb')
+                        f.write(self.generate_kml(tx, ty, tz, children).encode('utf-8'))
+                        f.close()
 
-                if not self.options.verbose and not self.options.quiet:
-                    self.progressbar(ti / float(tcount))
+                    if not self.options.verbose and not self.options.quiet:
+                        self.progressbar(ti / float(tcount))
 
     def geo_query(self, ds, ulx, uly, lrx, lry, querysize=0):
         """
@@ -2537,33 +2542,32 @@ class GDAL2Tiles(object):
 
 def worker_metadata(argv):
     sys.stdout.flush()
-    print("\tStart of metadata worker.")
+    
     gdal2tiles = GDAL2Tiles(argv[1:])
+
+    if gdal2tiles.options.verbose:
+        print("\tStart of metadata worker.")
+    
     gdal2tiles.open_input()
     gdal2tiles.generate_metadata()
-    print("\tEnd of metadata worker.")
 
+    if gdal2tiles.options.verbose:
+        print("\tEnd of metadata worker.")
 
 def worker_base_tiles(argv, cpu):
     sys.stdout.flush()
-    print("\tStart of base tile worker: " + str(cpu))
+    
     gdal2tiles = GDAL2Tiles(argv[1:])
+
+    if gdal2tiles.options.verbose:
+        print("\tStart of base tile worker: " + str(cpu))
     gdal2tiles.open_input()
     gdal2tiles.generate_base_tiles(cpu)
     return cpu
 
-def worker_overview_tiles(argv, cpu, tz):
-    sys.stdout.flush()
-    print("\tStart of overview tile worker: " + str(cpu) + ", zoom=" + str(tz))
-    gdal2tiles = GDAL2Tiles(argv[1:])
-    gdal2tiles.open_input()
-    gdal2tiles.generate_overview_tiles(cpu, tz)
-    print("\tEnd of overview tile worker: " + str(cpu) + ", zoom=" + str(tz))
-
 def worker_callback(cpu):
-    # workers_done += 1
-    # print("End of worker: " + str(cpu), "workers done", int(workers_done))
-    print("End of worker: " + str(cpu))
+    # print("End of worker: " + str(cpu))
+   return 0 
 
 def error_callback(*args):
     print(args)
@@ -2578,17 +2582,17 @@ def main(argv=None):
     argv = gdal.GeneralCmdLineProcessor(sys.argv)
     if argv:
         gdal2tiles = GDAL2Tiles(argv[1:])  # handle command line options
-
-        print("Begin metadata generation complete.")
+        
+        if gdal2tiles.options.verbose:
+            print("Begin metadata generation complete.")
         p = Process(target=worker_metadata, args=[argv])
         p.start()
         p.join()
-        print("Metadata generation complete.")
-
+        if gdal2tiles.options.verbose:
+            print("Metadata generation complete.")
        
-
         pool = Pool()
-        #processed_tiles = 0
+        
         print("Generating Base Tiles:")
 
         for cpu in range(gdal2tiles.options.processes):
@@ -2601,21 +2605,16 @@ def main(argv=None):
         # Workaround for the 100% filling of the progress bar
         print("100 - done.")
         
-        print("Base tile generation complete.")
+        if gdal2tiles.options.verbose:
+            print("Base tile generation complete.")
+            print("Generating Overview Tiles:")
+        
+        gdal2tiles = GDAL2Tiles(argv[1:])
+        gdal2tiles.open_input()
+        gdal2tiles.generate_overview_tiles()
 
-        #processed_tiles = 0
-        tminz, tmaxz = getZooms(gdal2tiles)
-        print("Generating Overview Tiles:")
-        for tz in range(tmaxz - 1, tminz - 1, -1):
-            print("\tGenerating for zoom level: " + str(tz))
-            pool = Pool()
-            for cpu in range(gdal2tiles.options.processes):
-                # This worker can't be asynchronous
-                pool.apply(worker_overview_tiles, [argv, cpu, tz])
-            pool.close()
-            pool.join()
-            print("\tZoom level " + str(tz) + " complete.")
-        print("Overview tile generation complete")
+        if gdal2tiles.options.verbose:
+            print("Overview tile generation complete")
 
 
 if __name__ == '__main__':
