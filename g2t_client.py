@@ -82,7 +82,44 @@ class GDAL2TilesSpawner():
         __call__ executes the class instance as a callable object
         """
         self.mk_args() # Prepare arguments
-        self.process = subprocess.Popen(self.arglist) # Spawn process 
+
+        print("Preparing arguments: ",self.arglist)
+        self.process = subprocess.Popen(self.arglist, stdout=subprocess.PIPE) # Spawn process 
+
+        step = 2.5
+        total = 0.0
+      
+        def percent(x, a=0.8, b=0.2):
+            if x <= 100:
+                return x*a
+            else:
+                return 100*a + (x-100)*b
+
+        import re
+
+        # TODO safely open with `with .. as ...`
+        for c in iter(lambda: self.process.stdout.read(1),''):
+            if c == b'':
+                break
+            d = c.decode("utf-8")
+            # print(d," ",re.search(r'[^a-zA-Z0\s]',d))
+            if not re.search(r'[^a-zA-Z0\s\-\:]',d):
+                continue
+            total += step
+            print(d,"total", total, "pct", percent(total))
+
+        print("Final total", total)
+
+        print("Process spawned")
+
+        try:
+            outs, errs = self.process.communicate()
+            print("I've got",outs)
+        except TimeoutExpired:
+            self.process.kill()
+            outs, errs = self.process.communicate()
+        
+        print("Process spawned")
 
         spawned_processes[self.process.pid] = {"pid": self.process.pid,
                                                "image": self.image,
@@ -95,9 +132,11 @@ class GDAL2TilesSpawner():
         self.mk_log()
 
         res = self.process.wait(timeout=self.timeout)
+       
+        res = self.process.wait(timeout=self.timeout)
 
         if res < 0:
-            logging.warning("process with pid " + str(self.process.pid) + " terminated with exit code "+ str(res))
+            logging.warning("process with pid " + str(self.process.pid) + "terminated with exit code "+ str(res))
             logging.warning("If you didn't killed the process it's very likely that something went wrong!")
         else:
             logging.info("process with pid " + str(self.process.pid) + " terminated successfully")
