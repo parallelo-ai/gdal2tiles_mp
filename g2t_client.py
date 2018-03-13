@@ -9,6 +9,10 @@ import signal
 spawned_processes = dict()
 
 class GDAL2TilesSpawner():
+    """
+    Spawns gdal2tiles tiler processes with subprocess and reports the progress
+    through callback functions
+    """
     def __repr__(self):
        return "GDAL2TilesSpawner(image=" + self.image + ")"
 
@@ -17,8 +21,9 @@ class GDAL2TilesSpawner():
         # Kills child process
         self.kill_process()
 
-    def __init__(self, image, profile="mercator", zoom="14-22", alpha=(0,0,0),
-        timeout=1800 ,binary="gdal2tiles_mp.py", python_bin="python3"):
+    def __init__(self, image, profile="mercator", zoom="15-22", alpha="0,0,0",
+                 progress_callback=None, timeout=1800 ,binary="gdal2tiles_mp.py"
+                 , python_bin="python3"):
         """
         __init__ populates the class members. The method options are,  
 
@@ -26,7 +31,17 @@ class GDAL2TilesSpawner():
         profile:(string) the projection profile.(default "mercator")(options:
         "geodetic" "mercator").  
         zoom:(string) the zoom range, as "10", or "15-22".(default "12-22").  
-        alpha:(tuple)(int) value for the alpha layer.(default (0,0,0))  
+        alpha:(string) value for the alpha layer.(default "0,0,0")  
+        progress_callback:(function) a function that receives a single argument.
+                          the purpose is to report the progress of the tiling.
+                          (default None)
+        timeout:(int) time in seconds to wait before killing the spawned process
+                useful for garbage collecting stalled processes.(default 1800
+                seconds)
+        binary:(string) name for the gdal2tiles converter. This allows the use
+        of diferent gdal2tiles binaries.(default "gdal2tiles_mp.py" which is
+        ours)
+        python_bin:(string) name for the python binary.(default "python3")
 
         The options are used to call and raise gdal2tiles_mp.py script through
         subprocess.   
@@ -34,7 +49,8 @@ class GDAL2TilesSpawner():
         """
         self.image = image
         self.profile = profile
-        self.alpha = str(alpha) # alpha should be a tuple
+        self.alpha = alpha
+        self.progress_callback = progress_callback # progress_callback function
         self.timeout = timeout
         self.binary = binary
         self.python_bin = python_bin
@@ -83,8 +99,16 @@ class GDAL2TilesSpawner():
         """
         self.mk_args() # Prepare arguments
 
-        print("Preparing arguments: ",self.arglist)
+        # print("Preparing arguments: ",self.arglist)
         self.process = subprocess.Popen(self.arglist, stdout=subprocess.PIPE) # Spawn process 
+
+        spawned_processes[self.process.pid] = {"pid": self.process.pid,
+                                               "image": self.image,
+                                               "profile" : self.profile,
+                                               "alpha" : str(self.alpha), # alpha should be a tuple
+                                               "timeout" : self.timeout,
+                                               "command" : self.arglist,
+                                               "progress" : 0}
 
         step = 2.5
         total = 0.0
@@ -102,31 +126,19 @@ class GDAL2TilesSpawner():
             if c == b'':
                 break
             d = c.decode("utf-8")
-            # print(d," ",re.search(r'[^a-zA-Z0\s]',d))
+            # if not re.search(r'[^a-zA-Z0\s\-\:]',d):
             if not re.search(r'[^a-zA-Z0\s\-\:]',d):
                 continue
             total += step
-            print(d,"total", total, "pct", percent(total))
+            # Updates dictionary with the progress of the current process
+            spawned_processes[self.process.pid]["progress"] = percent(total)
+            if self.progress_callback != None:
+                # Pass the percented total to the progress_callback function
+                self.progress_callback(percent(total))
+            # print(d,"total", total, "pct", percent(total))
 
-        print("Final total", total)
+        # print("Final total", total)
 
-        print("Process spawned")
-
-        try:
-            outs, errs = self.process.communicate()
-            print("I've got",outs)
-        except TimeoutExpired:
-            self.process.kill()
-            outs, errs = self.process.communicate()
-        
-        print("Process spawned")
-
-        spawned_processes[self.process.pid] = {"pid": self.process.pid,
-                                               "image": self.image,
-                                               "profile" : self.profile,
-                                               "alpha" : str(self.alpha), # alpha should be a tuple
-                                               "timeout" : self.timeout,
-                                               "command":self.arglist}
        
         # Log the event
         self.mk_log()
