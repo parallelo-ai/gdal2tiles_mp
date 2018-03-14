@@ -23,7 +23,7 @@ class GDAL2TilesSpawner():
 
     def __init__(self, image, profile="mercator", zoom="15-22", alpha="0,0,0",
                  progress_callback=None, timeout=1800 ,binary="gdal2tiles_mp.py"
-                 , python_bin="python3"):
+                 , python_bin="python3", **kwargs):
         """
         __init__ populates the class members. The method options are,  
 
@@ -54,6 +54,9 @@ class GDAL2TilesSpawner():
         self.timeout = timeout
         self.binary = binary
         self.python_bin = python_bin
+
+        if kwargs:
+          self.kwargs = kwargs
 
         # Check the zoom range
         if zoom.count("-") > 0:
@@ -88,10 +91,16 @@ class GDAL2TilesSpawner():
         logging.info("command: " + str(self.arglist))
    
     def mk_args(self):
-        self.arglist = shlex.split(self.python_bin + " " + self.binary + 
-                                   " --profile="+ self.profile + " -a " +
-                                   self.alpha + " --zoom " + self.zoom_min+"-" 
-                                   + self.zoom_max + " "+self.image )
+        argstr = self.python_bin + " " + self.binary 
+        argstr +=  " --profile="+ self.profile + " -a "
+        argstr +=  self.alpha + " --zoom " + self.zoom_min+"-" 
+        argstr +=  self.zoom_max + " " + self.image + " -w none "
+
+        if self.kwargs:
+            if 'output' in self.kwargs:
+                argstr += self.kwargs["output"]
+
+        self.arglist = shlex.split(argstr)
 
     def __call__(self):
         """
