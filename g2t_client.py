@@ -17,12 +17,11 @@ class GDAL2TilesSpawner():
        return "GDAL2TilesSpawner(image=" + self.image + ")"
 
     def signal_handler(self, signum, frame):
-        # print("got a signal mate",self, signum, frame)
         # Kills child process
         self.kill_process()
 
-    def __init__(self, image, profile="mercator", zoom="15-22", alpha="0,0,0",
-                 progress_callback=None, timeout=1800 ,binary="gdal2tiles_mp.py"
+    def __init__(self, layer_id, image, profile="mercator", zoom="15-22", alpha="0,0,0",
+                 progress_callback=None, done_callback=None, timeout=1800 ,binary="gdal2tiles_mp.py"
                  , python_bin="python3", **kwargs):
         """
         __init__ populates the class members. The method options are,  
@@ -51,6 +50,9 @@ class GDAL2TilesSpawner():
         self.profile = profile
         self.alpha = alpha
         self.progress_callback = progress_callback # progress_callback function
+        self.done_callback = done_callback # done_callback function
+        self.layer_id = layer_id 
+
         self.timeout = timeout
         self.binary = binary
         self.python_bin = python_bin
@@ -60,7 +62,6 @@ class GDAL2TilesSpawner():
 
         # Check the zoom range
         if zoom.count("-") > 0:
-            # self.zoom_min, self.zoom_max = map(int, zoom.split("-")) # Integer
             self.zoom_min, self.zoom_max = zoom.split("-")
         else:
             # min and max zoom levels are the same
@@ -69,11 +70,11 @@ class GDAL2TilesSpawner():
         # Config log file
         self.init_log()
         self.mk_log_decoration()
-      
+
         # Signals that i'll listen to
         signal.signal(signal.SIGINT,  self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
-        
+    
     def init_log(self):
         log_filename = self.image.split(".")[-2] + "-" + datetime.datetime.now().strftime("%y-%m-%d_%H.%M.%S") + "-G2T.log"
         logging.basicConfig(filename=log_filename,format='%(asctime)s - %(levelname)s: %(message)s', level=logging.DEBUG)
@@ -118,11 +119,14 @@ class GDAL2TilesSpawner():
                                                "timeout" : self.timeout,
                                                "command" : self.arglist,
                                                "progress" : 0}
-
+        # Each dot corresponds to a 2.5% in progress
         step = 2.5
         total = 0.0
-      
-        def percent(x, a=0.8, b=0.2):
+        
+        # The combination of and b provide a smooth transition
+        # between the progress bars of generate_base_tiles and
+        # generate_overview_tiles processes
+        def percent(x, a=0.85, b=0.15):
             if x <= 100:
                 return x*a
             else:
@@ -135,19 +139,20 @@ class GDAL2TilesSpawner():
             if c == b'':
                 break
             d = c.decode("utf-8")
-            # if not re.search(r'[^a-zA-Z0\s\-\:]',d):
             if not re.search(r'[^a-zA-Z0\s\-\:]',d):
                 continue
             total += step
+
             # Updates dictionary with the progress of the current process
             spawned_processes[self.process.pid]["progress"] = percent(total)
+
             if self.progress_callback != None:
                 # Pass the percented total to the progress_callback function
                 self.progress_callback(percent(total))
-            # print(d,"total", total, "pct", percent(total))
 
-        # print("Final total", total)
-
+        if self.done_callback != None:
+            # Pass the percented total to the progress_callback function
+            self.done_callback(self.layer_id)
        
         # Log the event
         self.mk_log()
