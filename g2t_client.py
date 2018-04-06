@@ -90,7 +90,7 @@ class GDAL2TilesSpawner():
     
     def init_log(self):
         log_filename = self.image.split(".")[-2] + "-" + datetime.datetime.now().strftime("%y-%m-%d_%H.%M.%S") + "-G2T.log"
-        logging.basicConfig(filename=log_filename,format='%(asctime)s - %(levelname)s: %(message)s', level=logging.DEBUG)
+        logging.basicConfig(filename=log_filename, format='%(asctime)s - %(levelname)s: %(message)s', level=logging.DEBUG)
 
     def mk_log_decoration(self):
         logging.info("****************************************")
