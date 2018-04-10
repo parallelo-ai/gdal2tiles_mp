@@ -90,7 +90,7 @@ class GDAL2TilesSpawner():
     
     def init_log(self):
         log_filename = self.image.split(".")[-2] + "-" + datetime.datetime.now().strftime("%y-%m-%d_%H.%M.%S") + "-G2T.log"
-        logging.basicConfig(filename=log_filename, format='%(asctime)s - %(levelname)s: %(message)s', level=logging.DEBUG)
+        logging.basicConfig(filename=log_filename,format='%(asctime)s - %(levelname)s: %(message)s', level=logging.DEBUG)
 
     def mk_log_decoration(self):
         logging.info("****************************************")
@@ -175,10 +175,11 @@ class GDAL2TilesSpawner():
 
             if self.progress_callback != None:
                 # Pass the percented total to the progress_callback function
-                self.progress_callback(percent(total))
+                self.progress_callback(progress=percent(total))
+                #self.progress_callback(**{"progress":percent(total)})
 
         if self.done_callback != None:
-            # Pass the percented total to the progress_callback function
+            # Once the process finishes, execute the callback 
             self.done_callback(self.layer_id)
        
         # Log the event
