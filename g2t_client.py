@@ -85,8 +85,8 @@ class GDAL2TilesSpawner():
         self.mk_log_decoration()
 
         # Signals that i'll listen to
-        signal.signal(signal.SIGINT,  self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
+        #signal.signal(signal.SIGINT,  self.signal_handler)
+        #signal.signal(signal.SIGTERM, self.signal_handler)
     
     def init_log(self):
         log_filename = self.image.split(".")[-2] + "-" + datetime.datetime.now().strftime("%y-%m-%d_%H.%M.%S") + "-G2T.log"
