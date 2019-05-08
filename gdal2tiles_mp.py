@@ -2570,8 +2570,8 @@ def worker_callback(cpu):
    return 0 
 
 def error_callback(*args):
+    print("something went wrong processing the file with multiprocessing and gdal2tiles:")
     print(args)
-    print("something went f*cking wrong with multiprocessing :\\")
 
 def getZooms(gdal2tiles):
     gdal2tiles.open_input()
